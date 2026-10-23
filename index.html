@@ -1,0 +1,1450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escape the OSI Tower</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: HUD on top, the platformer canvas on the left, a tower map of the 7 floors plus the roof on the right. */
+:root {
+  color-scheme: light;
+  --bg: #F3F7FB;
+  --surface: #FFFFFF;
+  --lane: #EAF1F9;
+  --ink: #12263F;
+  --muted: #566982;
+  --line: #D3DEEA;
+  --accent: #1F6FEB;
+  --accent-ink: #FFFFFF;
+  --ok: #178A4C;
+  --bad: #D12F2F;
+  --warn: #B87800;
+  --ok-tint: #E3F5EA;
+  --bad-tint: #FCE4E4;
+  --warn-tint: #FFF1CC;
+  --font-display: "Bricolage Grotesque", "Trebuchet MS", sans-serif;
+  --font-body: "DM Sans", "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0C1626; --surface: #14233A; --lane: #0F1D31; --ink: #E5EEF9; --muted: #9DB0C8; --line: #29405E;
+    --accent: #5C9DFF; --accent-ink: #08162A;
+    --ok: #3FCB80; --bad: #FF6E6E; --warn: #F2B93E;
+    --ok-tint: #12362A; --bad-tint: #3E1B22; --warn-tint: #3B3010;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) 32px max(16px, env(safe-area-inset-left, 0px));
+}
+.wrap { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; line-height: 1.15; }
+button { font: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; }
+.brand h1 { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; }
+.brand span { color: var(--muted); font-size: 0.9rem; }
+.hud { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+.teambtn { border: 2px solid var(--accent); background: transparent; color: var(--accent); border-radius: 10px; padding: 6px 14px; font-weight: 700; }
+.teambtn:hover { background: var(--lane); }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; min-width: 96px; }
+.stat small { display: block; color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.stat b { font-family: var(--font-mono); font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.heart { color: var(--line); font-size: 1.15rem; letter-spacing: 1px; }
+.heart.on { color: var(--bad); }
+.stat.hurt { animation: shake 0.4s; border-color: var(--bad); }
+
+.game { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.stage { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+canvas { display: block; width: 100%; height: auto; }
+#toast { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 6px 14px; border-radius: 99px; font-size: 0.85rem; font-weight: 500; max-width: 92%; text-align: center; pointer-events: none; }
+.keys { margin: 8px 0 0; color: var(--muted); font-size: 0.85rem; }
+.touch { display: none; gap: 8px; margin-top: 10px; }
+.touch button { flex: 1; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 12px; padding: 16px 6px; font-weight: 700; touch-action: none; user-select: none; -webkit-user-select: none; }
+.touch button:active { background: var(--lane); }
+@media (pointer: coarse) { .touch { display: flex; } .keys { display: none; } }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; min-width: 0; }
+.panel h2 { font-size: 1rem; margin-bottom: 8px; }
+#tower { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+#tower li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 0.85rem; opacity: 0.6; }
+#tower li i { flex: none; width: 12px; height: 12px; border-radius: 4px; }
+#tower li div { flex: 1; min-width: 0; line-height: 1.2; }
+#tower li small { color: var(--muted); display: block; }
+#tower li em { font-style: normal; font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700; color: var(--muted); }
+#tower li.cur { opacity: 1; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
+#tower li.done { opacity: 1; }
+#tower li.done em { color: var(--ok); }
+
+.members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.member { display: flex; align-items: center; gap: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--lane); min-width: 0; }
+.photo { flex: none; width: 88px; height: 88px; aspect-ratio: 1 / 1; border-radius: 50%; object-fit: cover; object-position: center top; background: var(--line); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); display: block; }
+.member b { display: block; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+.member small { color: var(--muted); font-family: var(--font-mono); font-size: 0.78rem; }
+#teamModal { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: rgba(8, 18, 34, 0.55); padding: 16px; }
+
+/* lessons */
+.lesson { display: flex; flex-direction: column; gap: 10px; }
+.lesson p { margin: 0; }
+.tip { background: var(--lane); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 12px; font-size: 0.92rem; }
+.dialog code { font-family: var(--font-mono); background: var(--bg); padding: 1px 5px; border-radius: 5px; font-size: 0.88em; }
+.pages { display: flex; gap: 6px; }
+.pages i { width: 26px; height: 6px; border-radius: 99px; background: var(--line); }
+.pages i.on { background: var(--accent); }
+
+#modal { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(8, 18, 34, 0.55); padding: 16px; }
+.dialog { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; max-width: 660px; width: 100%; max-height: 100%; overflow-y: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; }
+.dialog h2 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
+.dialog p { margin: 0; }
+.dialog ul, .dialog ol { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 4px; }
+.muted { color: var(--muted); }
+.band { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; padding: 5px 12px; border-radius: 8px; align-self: flex-start; }
+.rnd { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.q { font-weight: 700; font-size: 1.05rem; }
+.pbody { display: flex; flex-direction: column; gap: 8px; }
+.opt { text-align: left; border: 2px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 10px; padding: 9px 14px; }
+.opt:hover:not(:disabled) { border-color: var(--accent); }
+.opt.sel { border-color: var(--accent); background: var(--lane); }
+.opt.ok { border-color: var(--ok); background: var(--ok-tint); }
+.opt.bad { border-color: var(--bad); background: var(--bad-tint); }
+.opt:disabled { cursor: default; }
+.opt .num { font-family: var(--font-mono); font-weight: 700; margin-right: 8px; color: var(--ok); }
+.mrow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr); gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.mrow.ok { border-color: var(--ok); background: var(--ok-tint); }
+.mrow.bad { border-color: var(--bad); background: var(--bad-tint); }
+.mrow .choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.mrow .opt { padding: 5px 10px; font-size: 0.85rem; }
+.fb { min-height: 1.4em; font-size: 0.92rem; }
+.fb.good { color: var(--ok); font-weight: 500; }
+.fb.badt { color: var(--bad); font-weight: 500; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn { border: 2px solid var(--accent); background: var(--accent); color: var(--accent-ink); border-radius: 10px; padding: 9px 20px; font-weight: 700; }
+.btn.alt { background: transparent; color: var(--accent); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.facts { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.facts div { background: var(--bg); border-radius: 10px; padding: 8px 12px; font-size: 0.9rem; }
+.facts small { display: block; color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; }
+
+/* boss */
+.bosshead { display: flex; gap: 14px; align-items: center; }
+.bosshead svg { flex: none; width: 84px; height: 84px; }
+.bosshead .name { font-family: var(--font-display); font-weight: 800; font-size: 1.15rem; }
+.hp { display: flex; gap: 4px; margin-top: 6px; }
+.hp i { flex: 1; height: 12px; border-radius: 4px; background: var(--bad); }
+.hp i.gone { background: var(--line); }
+.timer { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.timer i { display: block; height: 100%; width: 100%; background: var(--accent); }
+.timer.low i { background: var(--bad); }
+.pdu { display: flex; flex-wrap: wrap; gap: 4px; align-items: stretch; padding: 10px; border: 2px dashed var(--line); border-radius: 12px; min-height: 56px; }
+.pdu.empty { color: var(--muted); font-size: 0.85rem; align-items: center; }
+.pdu .chip { font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; padding: 6px 8px; border-radius: 6px; display: flex; align-items: center; }
+.pdulabel { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.bossbox.shake { animation: shake 0.4s; }
+@keyframes shake { 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+@media (prefers-reduced-motion: reduce) { .stat.hurt, .bossbox.shake { animation: none; } }
+
+@media (max-width: 760px) {
+  .game { grid-template-columns: 1fr; }
+  .brand h1 { font-size: 1.45rem; }
+  .hud { width: 100%; }
+  .stat { min-width: 0; flex: 1; }
+  .teambtn { flex: 1 1 100%; }
+  .mrow { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand"><h1>Escape the OSI Tower</h1><span>Climb seven layers. Beat the boss on the roof.</span></div>
+    <div class="hud">
+      <div class="stat" id="livesBox"><small>Lives</small><span id="hudLives"></span></div>
+      <div class="stat"><small>Score</small><b id="hudScore">0</b></div>
+      <div class="stat"><small>Floor</small><b id="hudFloor">1</b></div>
+      <button class="teambtn" id="teamBtn" type="button">Meet The Team</button>
+    </div>
+  </div>
+
+  <div class="game">
+    <div>
+      <div class="stage">
+        <canvas id="cv" aria-label="Platformer view of the current tower floor"></canvas>
+        <div id="toast" hidden></div>
+      </div>
+      <div class="touch" id="touch">
+        <button id="tLeft" type="button">Left</button>
+        <button id="tRight" type="button">Right</button>
+        <button id="tJump" type="button">Jump</button>
+        <button id="tUse" type="button">Use</button>
+      </div>
+      <p class="keys">Move: arrow keys or A / D. Jump: Space, W or Up. Use a terminal: E or Enter.</p>
+    </div>
+    <div class="panel">
+      <h2>The tower</h2>
+      <ol id="tower"></ol>
+    </div>
+  </div>
+
+</div>
+
+<div id="modal" hidden><div class="dialog" id="dialog"></div></div>
+<div id="teamModal" hidden role="dialog" aria-modal="true" aria-label="Meet The Team"><div class="dialog" id="teamDialog"></div></div>
+
+<script>
+// ---------- floor data ----------
+// Each floor has a platform level (ground pieces, platforms, terminal, door). Lessons and questions are in LESSONS and POOLS below.
+var FLOORS = [
+  {
+    n: 1, name: "Physical", color: "#E76F51", ink: "#FFFFFF", title: "The Wiring Closet",
+    story: "Sparks fly across the wiring closet. Rebuild the link from the ground up.",
+    level: { ground: [[0, 800]], plats: [[140, 345, 110], [300, 285, 110], [460, 225, 120]], term: { x: 520, y: 225 }, door: 735 },
+     concept: { pdu: "Bits", devices: "Cables, hubs, repeaters, network interface cards", protocols: "Ethernet cabling standards, USB, Bluetooth radio, DSL",
+      text: "Layer 1 moves raw bits as electrical, light or radio signals. It knows nothing about addresses or meaning." }
+  },
+  {
+    n: 2, name: "Data Link", color: "#E9A220", ink: "#12263F", title: "The Switch Room",
+    story: "Frames are arriving and the switch has lost its sense of direction.",
+    level: { ground: [[0, 330], [420, 800]], plats: [[340, 350, 80], [470, 330, 100], [610, 270, 100]], term: { x: 660, y: 270 }, door: 740 },
+     concept: { pdu: "Frame", devices: "Switches, bridges, network interface cards", protocols: "Ethernet, Wi-Fi (802.11), PPP",
+      text: "Layer 2 delivers frames between devices on the same local network using MAC addresses. The FCS at the end lets the receiver spot corruption." }
+  },
+  {
+    n: 3, name: "Network", color: "#2A9D8F", ink: "#FFFFFF", title: "The Routing Hall",
+    story: "Packets are lost in a maze of corridors. Point each one at the right router.",
+    level: { ground: [[0, 260], [340, 560], [640, 800]], plats: [[360, 330, 90], [500, 250, 90], [650, 330, 80]], term: { x: 545, y: 250 }, door: 745 },
+     concept: { pdu: "Packet", devices: "Routers, layer 3 switches", protocols: "IP, ICMP, OSPF, BGP",
+      text: "Layer 3 uses IP addresses to choose a path across many networks. Routers forward each packet to the best matching next hop." }
+  },
+  {
+    n: 4, name: "Transport", color: "#1F6FEB", ink: "#FFFFFF", title: "The Delivery Dock",
+    story: "Parcels need the right courier. Fix the broken connection, then choose the right transport.",
+    level: { ground: [[0, 200], [300, 500], [600, 800]], plats: [[205, 345, 80], [340, 330, 90], [470, 260, 90]], term: { x: 515, y: 260 }, door: 750 },
+     concept: { pdu: "Segment (TCP) or datagram (UDP)", devices: "Port-based firewalls, load balancers", protocols: "TCP, UDP",
+      text: "Layer 4 gets data from one application to another using port numbers. TCP adds reliability, UDP adds speed." }
+  },
+  {
+    n: 5, name: "Session", color: "#7B5BE0", ink: "#FFFFFF", title: "The Meeting Room",
+    story: "Two programs lost their conversation halfway through. Reopen the session.",
+    level: { ground: [[0, 800]], plats: [[110, 350, 80], [230, 300, 80], [350, 250, 80], [470, 200, 80], [610, 260, 90]], term: { x: 510, y: 200 }, door: 745 },
+     concept: { pdu: "Data", devices: "Gateways", protocols: "NetBIOS, RPC, PPTP, SIP",
+      text: "Layer 5 opens, manages and closes sessions between applications, and can add checkpoints so long transfers recover from failures." }
+  },
+  {
+    n: 6, name: "Presentation", color: "#D6479B", ink: "#FFFFFF", title: "The Translation Lab",
+    story: "The message is scrambled. Fix it so both sides read the same thing.",
+    level: { ground: [[0, 240], [330, 800]], plats: [[250, 350, 70], [420, 330, 90], [560, 270, 100]], term: { x: 610, y: 270 }, door: 745 },
+     concept: { pdu: "Data", devices: "Gateways, proxies", protocols: "TLS/SSL, JPEG, GIF, ASCII, UTF-8",
+      text: "Layer 6 translates data into a format both sides understand, and handles encryption and compression." }
+  },
+  {
+    n: 7, name: "Application", color: "#3B9D3B", ink: "#FFFFFF", title: "The Control Room",
+    story: "The last floor before the roof. Give the apps their network services back.",
+    level: { ground: [[0, 200], [290, 420], [510, 640], [730, 800]], plats: [[210, 350, 70], [440, 350, 60], [530, 290, 100]], term: { x: 580, y: 290 }, door: 765 },
+     concept: { pdu: "Data", devices: "Gateways, proxies, application firewalls", protocols: "HTTP/HTTPS, SMTP, FTP, DNS, SSH",
+      text: "Layer 7 is where network services meet the programs people use." }
+  }
+];
+
+// ---------- lessons ----------
+// Each layer has a few lesson pages shown before the terminal questions. Pages are plain HTML strings.
+var LESSONS = [
+  // Layer 1
+  [
+    { t: "What the Physical layer does",
+      h: "<p>Layer 1 is the bottom of the stack. Its only job is to move <b>raw bits</b> (0s and 1s) from one device to the next across some physical medium. It does not know what the bits mean, where they are going or whether they arrived damaged.</p>" +
+         "<p>Every message you ever send, whether it is a web page, a photo or a game move, ends up as a stream of bits on this layer.</p>" +
+         "<div class='tip'><b>Analogy:</b> Layer 1 is the road and the trucks. The trucks do not care what is inside the boxes, they only carry them from one end of the road to the other.</div>" },
+    { t: "Media and signals",
+      h: "<p>A <b>medium</b> is whatever carries the signal. There are three main families:</p>" +
+         "<ul><li><b>Copper cable</b> (twisted pair, such as Cat5e or Cat6 Ethernet): bits become changes in electrical voltage. Cheap and common, but limited to about 100 m per segment and affected by electrical interference.</li>" +
+         "<li><b>Fiber optic cable</b>: bits become pulses of light. It reaches very long distances, is very fast and is not affected by electromagnetic interference.</li>" +
+         "<li><b>Wireless</b> (Wi-Fi, Bluetooth, cellular): bits become radio waves through the air.</li></ul>" +
+         "<p>Turning bits into a signal is called <b>encoding</b> (or line coding). For example, a high voltage can mean 1 and a low voltage can mean 0. Both ends must agree on the scheme and on the speed.</p>" },
+    { t: "Devices and specifications",
+      h: "<p>Typical Layer 1 equipment:</p>" +
+         "<ul><li><b>Cables and connectors</b> such as the RJ-45 plug on an Ethernet cable.</li>" +
+         "<li><b>Repeaters</b> that clean up and boost a weakening signal so it can travel further.</li>" +
+         "<li><b>Hubs</b>: a multi-port repeater. A bit that comes in on one port is copied out of every other port. A hub has no idea who the data is for, so all its ports share one <b>collision domain</b> and devices must take turns.</li>" +
+         "<li><b>The physical part of a network card</b> and <b>modems</b>, which convert between digital data and the signal of a phone, cable or fiber line.</li></ul>" +
+         "<p>Layer 1 also defines speeds (bit rate or bandwidth, in Mbps or Gbps) and whether a link is <b>simplex</b> (one way only), <b>half duplex</b> (both ways, one at a time) or <b>full duplex</b> (both ways at once).</p>" },
+    { t: "Troubleshooting and key takeaways",
+      h: "<p>Layer 1 problems are usually very physical: an unplugged or damaged cable, a loose connector, a cable that is too long (the signal weakens, called <b>attenuation</b>), or interference from motors and other electronics.</p>" +
+         "<div class='tip'><b>Tip:</b> When something will not connect, check Layer 1 first. No link light on the port usually means a cable or port problem, not a software problem.</div>" +
+         "<ul><li>Data unit: <b>bits</b>.</li><li>No addresses, no error correction, no meaning, just signals.</li><li>Key words: cable, fiber, radio, voltage, light, hub, repeater.</li></ul>" }
+  ],
+  // Layer 2
+  [
+    { t: "What the Data Link layer does",
+      h: "<p>Layer 2 takes the stream of bits from Layer 1 and organizes it into <b>frames</b>. It delivers those frames between two devices that are on the <b>same local network</b>, one hop at a time.</p>" +
+         "<p>It also gives each network card a hardware address, decides who may use the shared medium, and checks frames for damage.</p>" +
+         "<div class='tip'><b>Analogy:</b> Layer 2 is the delivery within one apartment building. It only needs the flat number (MAC address) to hand a parcel to the right door. It does not plan the trip across the city.</div>" },
+    { t: "MAC addresses and the frame",
+      h: "<p>A <b>MAC address</b> is a 48-bit hardware address, written as six pairs of hex digits, for example <code>00:1A:2B:3C:4D:5E</code>. The first half identifies the manufacturer and the second half is unique to the card. It is normally built into the network card.</p>" +
+         "<p>An <b>Ethernet frame</b> contains, in order:</p>" +
+         "<ul><li>Destination MAC and source MAC</li><li>A type field saying what is inside (for example IPv4)</li>" +
+         "<li>The payload, usually up to 1500 bytes</li><li>The <b>FCS</b> (frame check sequence), a checksum at the end that lets the receiver detect corruption</li></ul>" +
+         "<p>Wi-Fi (802.11) is also a Layer 2 technology, with its own frame format.</p>" },
+    { t: "How switches work",
+      h: "<p>A <b>switch</b> is the main Layer 2 device. Unlike a hub, it reads the MAC addresses in each frame:</p>" +
+         "<ol><li><b>Learn:</b> when a frame arrives, the switch records the source MAC and the port it came from in its MAC address table.</li>" +
+         "<li><b>Forward:</b> if the destination MAC is in the table, the frame goes out of that one port only.</li>" +
+         "<li><b>Flood:</b> if the destination is unknown, or it is a broadcast, the frame goes out of every port except the one it arrived on.</li></ol>" +
+         "<p>Because each switch port is its own collision domain, switches are much faster and quieter than hubs.</p>" +
+         "<p><b>ARP</b> helps here: a device that knows only an IP address broadcasts \"who has this IP?\" and the owner replies with its MAC address. <b>VLANs</b> let one switch behave like several separate networks.</p>" },
+    { t: "Errors and key takeaways",
+      h: "<p>When a frame arrives, the receiver recomputes the checksum and compares it with the FCS. If they differ, the frame is <b>silently discarded</b>. Layer 2 does not ask for a resend. Higher layers such as TCP notice the missing data and recover it.</p>" +
+         "<div class='tip'><b>Remember:</b> MAC addresses only matter on the local link and are rewritten at every hop. IP addresses stay the same from end to end.</div>" +
+         "<ul><li>Data unit: <b>frame</b>.</li><li>Address: <b>MAC</b>.</li><li>Devices: switches, bridges, network cards, wireless access points.</li><li>Key words: Ethernet, 802.11, FCS, VLAN, ARP.</li></ul>" }
+  ],
+  // Layer 3
+  [
+    { t: "What the Network layer does",
+      h: "<p>Layer 3 moves data between <b>different networks</b>. It gives every device a logical <b>IP address</b> and chooses a path, called <b>routing</b>, so a packet can travel from your laptop to a server on the other side of the world.</p>" +
+         "<div class='tip'><b>Analogy:</b> Layer 3 is the postal system between cities. The postal code and street address (IP address) tell each sorting office which way to send the parcel next.</div>" },
+    { t: "IP addresses and subnets",
+      h: "<ul><li><b>IPv4</b> uses 32 bits, written as four numbers such as <code>192.168.1.10</code>.</li>" +
+         "<li><b>IPv6</b> uses 128 bits, written in hex, because IPv4 addresses are running out.</li></ul>" +
+         "<p>Every IP address has a <b>network part</b> and a <b>host part</b>. The <b>subnet mask</b> (or CIDR notation such as <code>/24</code>) says where the split is. Devices with the same network part are on the same subnet and can talk directly. Anything else goes through the <b>default gateway</b>, which is the local router.</p>" +
+         "<p>Home and office networks use <b>private</b> ranges (10.x.x.x, 172.16 to 172.31, 192.168.x.x) and a router performs <b>NAT</b> to share one public address.</p>" },
+    { t: "Routers and routing",
+      h: "<p>A <b>router</b> keeps a <b>routing table</b>: a list of networks and the next hop for each. For every packet it:</p>" +
+         "<ol><li>Takes the packet out of the incoming frame</li><li>Reads the destination IP and picks the best matching route (the most specific prefix wins)</li>" +
+         "<li>Lowers the <b>TTL</b> (time to live) by one</li><li>Wraps the packet in a brand new frame with new MAC addresses and sends it to the next hop</li></ol>" +
+         "<p>Routing tables are built by hand (static routes) or learned using protocols such as <b>OSPF</b> (inside an organization) and <b>BGP</b> (between organizations on the internet).</p>" },
+    { t: "TTL, ICMP and key takeaways",
+      h: "<p>The <b>TTL</b> field stops packets from circling forever. Each router subtracts 1, and when it reaches 0 the packet is dropped and an <b>ICMP</b> \"time exceeded\" message is sent back. That is how <code>traceroute</code> works. <code>ping</code> also uses ICMP.</p>" +
+         "<p>IP is <b>best effort</b>: it does not guarantee delivery, order or error-free data. Reliability, when needed, comes from Layer 4.</p>" +
+         "<ul><li>Data unit: <b>packet</b>.</li><li>Address: <b>IP</b>.</li><li>Devices: routers, layer 3 switches.</li><li>Key words: IP, ICMP, OSPF, BGP, subnet, TTL.</li></ul>" }
+  ],
+  // Layer 4
+  [
+    { t: "What the Transport layer does",
+      h: "<p>Layers 1 to 3 get data to the right <b>computer</b>. Layer 4 gets it to the right <b>program</b> on that computer. It also breaks big messages into <b>segments</b> and, if the application wants it, makes sure everything arrives complete and in order.</p>" +
+         "<div class='tip'><b>Analogy:</b> The building is the computer. Layer 4 is the mailroom that knows which office (port) each parcel belongs to, and can optionally require a signature on delivery.</div>" },
+    { t: "Ports and sockets",
+      h: "<p>A <b>port number</b> is a 16-bit number (0 to 65535) that identifies a service or program. Together, an IP address and a port form a <b>socket</b>, for example <code>203.0.113.5:443</code>.</p>" +
+         "<p>Well-known ports (0 to 1023) include:</p>" +
+         "<ul><li>80 HTTP, 443 HTTPS</li><li>22 SSH</li><li>25 SMTP (email sending)</li><li>53 DNS</li></ul>" +
+         "<p>Your computer picks a random high port for its side of each connection. This is called <b>multiplexing</b>: many programs share one IP address at the same time.</p>" },
+    { t: "TCP: reliable delivery",
+      h: "<p><b>TCP</b> is connection-oriented and reliable. It starts with the <b>three-way handshake</b>:</p>" +
+         "<ol><li>Client sends <b>SYN</b></li><li>Server replies <b>SYN-ACK</b></li><li>Client sends <b>ACK</b></li></ol>" +
+         "<p>After that, every byte gets a <b>sequence number</b>, the receiver sends <b>acknowledgements</b>, and anything not acknowledged is sent again. <b>Flow control</b> (the window size) stops a fast sender from overwhelming a slow receiver, and <b>congestion control</b> slows down when the network is crowded.</p>" +
+         "<p>Used by the web, email, file transfer and anything where every byte must be correct.</p>" },
+    { t: "UDP and choosing between them",
+      h: "<p><b>UDP</b> is connectionless. It has a tiny 8-byte header, no handshake, no resending and no ordering. It is fast and light, but packets may be lost or arrive out of order.</p>" +
+         "<p>It is a good fit when fresh data matters more than perfect data: live video and voice calls, online games, streaming and quick DNS lookups.</p>" +
+         "<div class='tip'><b>Rule of thumb:</b> If a missing piece would ruin the result (a file, a web page), use TCP. If a late piece is useless anyway (a video frame from two seconds ago), use UDP.</div>" +
+         "<ul><li>Data unit: <b>segment</b> (TCP) or <b>datagram</b> (UDP).</li><li>Address: <b>port number</b>.</li></ul>" }
+  ],
+  // Layer 5
+  [
+    { t: "What the Session layer does",
+      h: "<p>When two programs talk, they are having a <b>conversation</b>, not just exchanging single messages. Layer 5 manages that conversation, called a <b>session</b>, through three phases:</p>" +
+         "<ol><li><b>Establish:</b> agree to start talking, often including authentication.</li><li><b>Maintain:</b> keep the session alive and organized.</li><li><b>Terminate:</b> end it cleanly so resources are released.</li></ol>" +
+         "<div class='tip'><b>Analogy:</b> A phone call. Dial and answer (establish), talk (maintain), say goodbye and hang up (terminate).</div>" },
+    { t: "Dialog control",
+      h: "<p>The Session layer decides <b>who may send and when</b>. This is called dialog control, and it can work in three modes:</p>" +
+         "<ul><li><b>Simplex:</b> one side only ever sends, like a TV broadcast.</li><li><b>Half duplex:</b> both sides send, but taking turns, like a walkie-talkie.</li><li><b>Full duplex:</b> both sides send at the same time, like a normal phone call.</li></ul>" +
+         "<p>Some designs use a token that is passed around, and only the holder may send.</p>" },
+    { t: "Synchronization and recovery",
+      h: "<p>Imagine downloading a 2 GB file and your connection drops at 1.5 GB. Without help you would start again from zero. With <b>checkpoints</b> (also called synchronization points) inserted into the data stream, both sides know the last confirmed point and can <b>resume from there</b>.</p>" +
+         "<p>Session-layer ideas appear in <b>RPC</b> (remote procedure calls), <b>NetBIOS</b>, <b>SIP</b> (voice and video calls) and <b>PPTP</b>. Logins that last a while, such as staying signed in to a website, are session ideas too.</p>" },
+    { t: "In the real world",
+      h: "<p>The OSI model is a reference model. The internet actually runs on TCP/IP, which does not have separate Session and Presentation layers. In practice, <b>the application layer or the application itself</b> takes care of sessions, using things like cookies, tokens and keep-alive messages.</p>" +
+         "<p>Session problems often look like \"I got logged out\" or \"the call dropped and reconnected\".</p>" +
+         "<ul><li>Data unit: <b>data</b>.</li><li>Jobs: open, manage, close, synchronize.</li><li>Key words: session, dialog, checkpoint, RPC, SIP.</li></ul>" }
+  ],
+  // Layer 6
+  [
+    { t: "What the Presentation layer does",
+      h: "<p>Different computers store and represent data in different ways. Layer 6 makes sure the <b>receiving side can understand what the sending side sent</b>. It has three main jobs:</p>" +
+         "<ul><li><b>Translation and formatting</b> between data formats</li><li><b>Encryption and decryption</b> for privacy</li><li><b>Compression and decompression</b> to save bandwidth</li></ul>" +
+         "<div class='tip'><b>Analogy:</b> A translator and a packing expert in one: they convert the message into a language both sides know, lock it in a box, and squeeze it to save space.</div>" },
+    { t: "Data formats",
+      h: "<p>Some formats you meet every day:</p>" +
+         "<ul><li><b>Text:</b> ASCII (128 basic characters) and <b>UTF-8</b> / Unicode (characters from nearly every language, plus emoji).</li>" +
+         "<li><b>Images:</b> JPEG, PNG, GIF.</li><li><b>Audio and video:</b> MP3, AAC, MPEG.</li>" +
+         "<li><b>Structured data:</b> JSON and XML.</li></ul>" +
+         "<p>If one side sends UTF-8 text and the other reads it as something else, you get garbled characters. That is a presentation problem.</p>" },
+    { t: "Encryption and compression",
+      h: "<p><b>Encryption</b> scrambles data using a key so that only someone with the right key can read it. <b>TLS/SSL</b> is the best-known example and is what makes HTTPS secure.</p>" +
+         "<div class='tip'><b>Encoding vs encryption:</b> Encoding (like UTF-8 or Base64) is just a format that anyone can reverse. Encryption needs a secret key.</div>" +
+         "<p><b>Compression</b> makes data smaller:</p>" +
+         "<ul><li><b>Lossless</b> (ZIP, PNG): the original is restored exactly.</li><li><b>Lossy</b> (JPEG, MP3): some detail is thrown away permanently for much smaller files.</li></ul>" },
+    { t: "Key takeaways",
+      h: "<p>In practice, TLS usually sits between the transport and application layers, so real systems blur the OSI boundaries. The model still helps you ask the right question: <i>is this about how the data is represented, protected or shrunk?</i> If yes, think Layer 6.</p>" +
+         "<ul><li>Data unit: <b>data</b>.</li><li>Devices: gateways and proxies that translate between formats.</li><li>Key words: TLS, UTF-8, JPEG, encryption, compression.</li></ul>" }
+  ],
+  // Layer 7
+  [
+    { t: "What the Application layer does",
+      h: "<p>Layer 7 is the layer <b>closest to the user</b>. It does not mean the apps themselves. It means the <b>network services and protocols</b> that applications use to talk across the network.</p>" +
+         "<p>Your browser is an application. It uses the HTTP protocol, which belongs to Layer 7, to ask for web pages.</p>" +
+         "<div class='tip'><b>Analogy:</b> You are at a restaurant. The menu and the way you place an order (the protocol) are Layer 7. The kitchen, the roads and the trucks behind the scenes are the layers below.</div>" },
+    { t: "Common protocols",
+      h: "<ul><li><b>HTTP / HTTPS:</b> web pages and APIs (HTTPS adds TLS).</li>" +
+         "<li><b>DNS:</b> turns names such as <code>example.com</code> into IP addresses.</li>" +
+         "<li><b>SMTP, IMAP, POP3:</b> sending and reading email.</li>" +
+         "<li><b>FTP / SFTP:</b> transferring files.</li>" +
+         "<li><b>SSH:</b> encrypted remote login to another computer.</li>" +
+         "<li><b>DHCP:</b> automatically hands out IP addresses.</li></ul>" },
+    { t: "Anatomy of a web request",
+      h: "<p>What happens when you open a website:</p>" +
+         "<ol><li>Your browser asks <b>DNS</b> for the server's IP address.</li><li>It opens a TCP connection (usually to port 443) and sets up TLS.</li>" +
+         "<li>It sends an <b>HTTP request</b>, such as <code>GET /index.html</code>.</li>" +
+         "<li>The server replies with a <b>status code</b> and content: <b>200</b> means OK, <b>404</b> means not found, <b>500</b> means server error.</li></ol>" +
+         "<p>HTTP works as request and response. The data then travels down through all the layers below, which is exactly what you will do against the boss.</p>" },
+    { t: "Key takeaways",
+      h: "<ul><li>Layer 7 gives programs access to network services. The program itself is not the layer.</li>" +
+         "<li>Safer replacements exist for older protocols: SSH instead of Telnet, SFTP instead of FTP, HTTPS instead of HTTP.</li>" +
+         "<li>Data unit: <b>data</b>.</li><li>Devices: gateways, proxies, application firewalls.</li></ul>" +
+         "<div class='tip'><b>Coming up:</b> on the roof, your request is wrapped layer by layer from 7 down to 1. Remember what each layer adds.</div>" }
+  ]
+];
+
+// ---------- question pools ----------
+// mk(question, right answer, wrong 1, wrong 2, wrong 3, explanation). The right answer is stored first and shuffled when shown.
+function mk(q, right, w1, w2, w3, explain) {
+  return { type: "single", q: q, options: [right, w1, w2, w3], correct: 0, explain: explain };
+}
+
+// each floor gives 4 easy and 3 hard questions; 2 easy and 1 hard are picked at random
+var POOLS = [
+  // Layer 1
+  { easy: [
+      mk("What unit of data does the Physical layer deal with?", "Bits", "Packets", "Frames", "Segments", "Layer 1 sends raw bits."),
+      mk("Which device simply repeats incoming signals out of all of its ports?", "Hub", "Switch", "Router", "Firewall", "A hub copies signals to every port without looking at addresses."),
+      mk("Which of these is a physical transmission medium?", "Fiber optic cable", "IP address", "MAC address", "Web browser", "Cables, fiber and radio are media. Addresses are higher-layer ideas."),
+      mk("Fiber optic cables carry data using what?", "Pulses of light", "Electric current", "Sound waves", "Magnetic fields", "Fiber sends bits as light pulses.")
+    ],
+    hard: [
+      mk("Why is fiber less affected by electromagnetic interference than copper cable?", "It carries light instead of electrical current", "It is much thicker", "It uses higher voltage", "It encrypts the signal", "Light is not disturbed by electromagnetic noise, unlike electrical signals in copper."),
+      mk("Why do hubs cause more collisions than switches?", "All hub ports share one collision domain", "Hubs add IP headers that slow traffic", "Hubs discard frames with a bad FCS", "Hubs only work wirelessly", "A hub repeats everything to every port, so devices must take turns. Each switch port is its own collision domain."),
+      mk("Which Layer 1 task decides how 0s and 1s are represented, for example as voltage levels or light pulses?", "Encoding (line coding)", "Routing", "Error checking with an FCS", "Session setup", "Encoding defines how bits are turned into a signal on the medium.")
+    ] },
+  // Layer 2
+  { easy: [
+      mk("How long is a MAC address?", "48 bits", "32 bits", "128 bits", "16 bits", "A MAC address is 48 bits, written as six hex pairs."),
+      mk("Which device forwards frames using MAC addresses?", "Switch", "Repeater", "Coaxial cable", "Antenna", "Switches read MAC addresses to choose the output port."),
+      mk("What is the data unit at the Data Link layer called?", "Frame", "Packet", "Segment", "Bit", "Layer 2 data units are frames."),
+      mk("Which of these is a Layer 2 technology?", "Ethernet", "IP", "TCP", "HTTP", "Ethernet defines frames and MAC addressing.")
+    ],
+    hard: [
+      mk("How does a switch learn which port a device is connected to?", "By reading the source MAC address of incoming frames", "By reading the destination IP address", "By asking a DNS server", "An administrator must type every entry", "The switch records each frame's source MAC and the port it arrived on."),
+      mk("What does a switch do with a frame whose destination MAC address is not in its table?", "Floods it out of every port except the one it arrived on", "Drops it immediately", "Sends it back to the sender", "Sends it only to the router", "Unknown destinations are flooded so the frame can still reach its target."),
+      mk("What does ARP do?", "Finds the MAC address that belongs to a known IP address", "Finds the IP address that belongs to a domain name", "Encrypts frames on the local link", "Chooses the best route across the internet", "ARP asks \"who has this IP?\" and the owner replies with its MAC address.")
+    ] },
+  // Layer 3
+  { easy: [
+      mk("Which address does the Network layer use?", "IP address", "MAC address", "Port number", "Email address", "Layer 3 routes using IP addresses."),
+      mk("What is the data unit at the Network layer called?", "Packet", "Frame", "Segment", "Bit", "Layer 3 data units are packets."),
+      mk("Which device chooses a path between networks?", "Router", "Hub", "Repeater", "Keyboard", "Routers forward packets between networks."),
+      mk("How many bits long is an IPv4 address?", "32", "48", "64", "128", "IPv4 uses 32 bits. IPv6 uses 128.")
+    ],
+    hard: [
+      mk("A router gets a packet for a network it is not directly connected to. What does it do?", "Looks up the next hop in its routing table and forwards the packet", "Floods the packet out of every port", "Asks the sender to resend using a MAC address", "Drops it without checking the table", "Routers forward packets toward the next hop found in the routing table, or use the default route."),
+      mk("What does a subnet mask tell a device?", "Which part of an IP address is the network and which is the host", "Which application should receive the data", "Which MAC address to use", "Whether the data is encrypted", "The mask splits an IP address into network and host portions."),
+      mk("What is the purpose of the TTL field in an IP header?", "It limits how many routers a packet can pass so it cannot loop forever", "It sets how long a web page stays cached", "It stores the destination MAC address", "It selects TCP or UDP", "Each router lowers TTL by 1. At 0 the packet is dropped and an ICMP message is sent back.")
+    ] },
+  // Layer 4
+  { easy: [
+      mk("Which protocol is connectionless and does not guarantee delivery?", "UDP", "TCP", "HTTP", "Ethernet", "UDP just sends datagrams without a handshake or resending."),
+      mk("What identifies which program on a computer should receive the data?", "Port number", "MAC address", "Subnet mask", "TTL", "Ports separate the traffic for different applications."),
+      mk("What is the TCP data unit called?", "Segment", "Frame", "Packet", "Bit", "TCP sends segments."),
+      mk("Which port does HTTPS use by default?", "443", "80", "25", "22", "HTTPS uses port 443. HTTP uses 80.")
+    ],
+    hard: [
+      mk("What are the three steps of the TCP handshake, in order?", "SYN, SYN-ACK, ACK", "ACK, SYN, FIN", "SYN, ACK, FIN", "HELLO, REPLY, DONE", "The client sends SYN, the server answers SYN-ACK and the client confirms with ACK."),
+      mk("What does TCP flow control prevent?", "A fast sender overwhelming a slow receiver", "Packets looping forever between routers", "Two devices using the same MAC address", "Unencrypted web traffic", "The receiver advertises a window size that limits how much the sender can send."),
+      mk("A multiplayer game sends player positions 60 times a second. Why is UDP a good fit?", "An old position is useless, so resending it would only add delay", "UDP encrypts the positions", "UDP guarantees every update arrives in order", "UDP uses MAC addresses to find players", "Fresh data matters more than perfect data in real-time traffic.")
+    ] },
+  // Layer 5
+  { easy: [
+      mk("What does the Session layer manage?", "Conversations (sessions) between programs", "Physical cables", "IP routes", "Image colors", "Layer 5 opens, manages and closes sessions."),
+      mk("Which three phases make up a session?", "Establish, maintain, terminate", "Encode, compress, encrypt", "Route, switch, repeat", "Send, drop, retry", "A session is opened, kept going and then closed cleanly."),
+      mk("Which layer sits directly above the Transport layer?", "Session", "Network", "Presentation", "Data Link", "The order from the bottom is Physical, Data Link, Network, Transport, Session, Presentation, Application."),
+      mk("Which of these is associated with the Session layer?", "RPC", "JPEG", "Ethernet", "IP", "Remote procedure calls rely on session management.")
+    ],
+    hard: [
+      mk("Which dialog mode lets both sides send data at the same time?", "Full duplex", "Simplex", "Half duplex", "Broadcast", "Full duplex allows two-way traffic simultaneously. Half duplex takes turns."),
+      mk("A 2 GB download fails at 1.5 GB and later continues from about 1.5 GB instead of the start. Which idea makes this possible?", "Checkpoints (synchronization points)", "MAC address learning", "Subnet masks", "Fiber optic cabling", "Checkpoints mark confirmed progress so a transfer can resume."),
+      mk("In the TCP/IP model, where are session-layer functions usually handled?", "Inside the application layer or the application itself", "In the Internet layer", "In the Link layer", "In the Physical layer", "TCP/IP has no separate session layer, so applications handle sessions with cookies, tokens and similar tools.")
+    ] },
+  // Layer 6
+  { easy: [
+      mk("Which task belongs to the Presentation layer?", "Encrypting data", "Routing packets", "Assigning MAC addresses", "Choosing port numbers", "Encryption, compression and format translation are Layer 6 jobs."),
+      mk("Which of these is a common image format?", "JPEG", "TCP", "IP", "SMTP", "JPEG is an image format associated with the Presentation layer."),
+      mk("Which encoding can represent characters from nearly every language?", "UTF-8", "ASCII", "Morse code", "Ethernet", "ASCII has only 128 characters. UTF-8 covers Unicode."),
+      mk("What does compression do?", "Makes data smaller so it takes less bandwidth", "Adds IP addresses", "Finds the best route", "Opens a session", "Compression reduces the size of the data.")
+    ],
+    hard: [
+      mk("Which protocol is best known for encrypting web traffic and is often placed at the Presentation layer?", "TLS", "ARP", "ICMP", "DHCP", "TLS provides encryption for HTTPS."),
+      mk("Which type of compression permanently throws away some detail to get smaller files?", "Lossy, such as JPEG or MP3", "Lossless, such as ZIP", "Lossless, such as PNG", "None, all compression keeps every bit", "Lossy methods remove detail humans are less likely to notice."),
+      mk("What is the key difference between encoding and encryption?", "Encoding can be reversed by anyone, encryption needs a secret key", "Encoding needs a key, encryption does not", "They are exactly the same thing", "Encoding is used only on Layer 1", "UTF-8 or Base64 are public formats. Encryption protects data with a key.")
+    ] },
+  // Layer 7
+  { easy: [
+      mk("Which protocol is used to load web pages?", "HTTP/HTTPS", "SMTP", "FTP", "Bluetooth", "HTTP and HTTPS request and deliver web pages."),
+      mk("Which service translates website names into IP addresses?", "DNS", "TCP", "JPEG", "Ethernet", "DNS looks up the IP address for a domain name."),
+      mk("Which protocol is used to send email?", "SMTP", "HTTP", "ARP", "UDP", "SMTP transfers outgoing email."),
+      mk("Which protocol is used to transfer files?", "FTP", "DNS", "ICMP", "BGP", "FTP (or the secure SFTP) is for file transfer.")
+    ],
+    hard: [
+      mk("Why is SSH preferred over Telnet for remote login?", "SSH encrypts the session, Telnet sends everything in plain text", "SSH is faster because it uses UDP", "SSH works without IP addresses", "Telnet is only for email", "SSH protects passwords and commands with encryption."),
+      mk("Which DNS record type maps a domain name to an IPv4 address?", "A record", "MX record", "TXT record", "ARP record", "An A record holds an IPv4 address. AAAA is for IPv6, MX is for mail servers."),
+      mk("Is a web browser itself the Application layer?", "No, it is a program that uses Application layer protocols such as HTTP", "Yes, every program is Layer 7", "Yes, but only Chrome is", "No, it belongs to the Transport layer", "Layer 7 is about network services and protocols, not the programs themselves.")
+    ] }
+];
+
+// the boss asks one question per layer, from Layer 7 down to Layer 1 (first option is always the right one)
+var BOSS_STEPS = [
+  { layer: 7, q: "Your browser asks for a web page. Which protocol formats that request?", options: ["HTTP", "IP", "Ethernet", "TCP"] },
+  { layer: 6, q: "Layer 6 prepares the data. What does it do?", options: ["Encodes and encrypts it (for example TLS)", "Adds IP addresses", "Adds MAC addresses", "Picks the cable"] },
+  { layer: 5, q: "Layer 5 keeps the conversation organised. What is its job?", options: ["Open, manage and close the session", "Choose the route across networks", "Turn frames into signals", "Add the port number"] },
+  { layer: 4, q: "Layer 4 adds a header with port numbers. Which header is this?", options: ["TCP header", "IP header", "Ethernet header", "HTTP header"] },
+  { layer: 3, q: "Layer 3 adds the source and destination IP addresses. Which header is this?", options: ["IP header", "TCP header", "Ethernet trailer", "TLS record"] },
+  { layer: 2, q: "Layer 2 wraps the packet with MAC addresses and a checksum trailer. What is the result called?", options: ["A frame", "A segment", "A packet", "A session"] },
+  { layer: 1, q: "Layer 1 sends the frame onto the wire. In what form?", options: ["Bits as electrical, light or radio signals", "Port numbers", "IP addresses", "HTTP headers"] }
+];
+
+// ---------- game state ----------
+var W = 800;
+var H = 450;
+var GROUND_Y = 410;
+var canvas = document.getElementById("cv");
+var ctx = canvas.getContext("2d");
+var dpr = Math.min(2, window.devicePixelRatio || 1);
+canvas.width = W * dpr;
+canvas.height = H * dpr;
+
+var mode = "title";       // title, play, puzzle, boss, gameover, victory
+var floorIdx = 0;         // 0 to 6 are floors, 7 is the roof boss, 8 means finished
+var score = 0;
+var lives = 5;
+var floorStartScore = 0;
+var solved = false;
+var roundIdx = 0;
+var roundStart = 0;
+var roundMistakes = 0;
+var player = { x: 30, y: 380, w: 22, h: 30, vx: 0, vy: 0, onGround: false, face: 1 };
+var keys = { left: false, right: false };
+var jumpBuf = 0;
+var coyote = 0;
+var colors = {};
+var toastTimer = null;
+var bossStep = 0;
+var bossTime = 15;
+var bossTimer = null;
+var bossBusy = false;
+var bossStartScore = 0;
+var walkClock = 0;
+var currentRounds = null;  // the 3 questions picked for the current floor
+var lessonSeen = [];
+var teamOpen = false;
+
+function readColors() {
+  var cs = getComputedStyle(document.documentElement);
+  var names = ["bg", "surface", "lane", "ink", "muted", "line", "accent", "ok", "bad"];
+  for (var i = 0; i < names.length; i++) { colors[names[i]] = cs.getPropertyValue("--" + names[i]).trim(); }
+}
+readColors();
+if (window.matchMedia) { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", readColors); }
+
+// ---------- small helpers ----------
+function el(tag, cls, html) {
+  var e = document.createElement(tag);
+  if (cls) { e.className = cls; }
+  if (html !== undefined) { e.innerHTML = html; }
+  return e;
+}
+
+function shuffled(n) {
+  var a = [];
+  for (var i = 0; i < n; i++) { a.push(i); }
+  for (var j = n - 1; j > 0; j--) {
+    var k = Math.floor(Math.random() * (j + 1));
+    var t = a[j]; a[j] = a[k]; a[k] = t;
+  }
+  return a;
+}
+
+function toast(msg) {
+  var t = document.getElementById("toast");
+  t.textContent = msg;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.hidden = true; }, 2800);
+}
+
+function updateHud() {
+  var h = "";
+  for (var i = 0; i < 5; i++) { h += "<span class='heart" + (i < lives ? " on" : "") + "'>&#9829;</span>"; }
+  document.getElementById("hudLives").innerHTML = h;
+  document.getElementById("hudScore").textContent = score;
+  var fl = floorIdx < 7 ? (floorIdx + 1) + " / 7" : (floorIdx === 7 ? "Roof" : "Done");
+  document.getElementById("hudFloor").textContent = fl;
+}
+
+function renderTower() {
+  var ol = document.getElementById("tower");
+  ol.innerHTML = "";
+  var rows = [{ idx: 7, label: "Roof", sub: "Boss: Packet Shredder", color: colors.ink }];
+  for (var i = 6; i >= 0; i--) { rows.push({ idx: i, label: "Layer " + (i + 1), sub: FLOORS[i].name, color: FLOORS[i].color }); }
+  for (var r = 0; r < rows.length; r++) {
+    var row = rows[r];
+    var li = document.createElement("li");
+    var state = "Locked";
+    if (row.idx === floorIdx) { li.className = "cur"; state = "Here"; }
+    else if (row.idx < floorIdx) { li.className = "done"; state = "Cleared"; }
+    li.innerHTML = "<i style='background:" + row.color + "'></i><div><b>" + row.label + "</b><small>" + row.sub + "</small></div><em>" + state + "</em>";
+    ol.appendChild(li);
+  }
+}
+
+function openModal() { document.getElementById("modal").hidden = false; }
+function closeModal() { document.getElementById("modal").hidden = true; }
+function dialog(cls) {
+  var d = document.getElementById("dialog");
+  d.className = "dialog" + (cls ? " " + cls : "");
+  d.innerHTML = "";
+  openModal();
+  return d;
+}
+
+function loseLife() {
+  lives--;
+  updateHud();
+  var box = document.getElementById("livesBox");
+  box.classList.remove("hurt");
+  void box.offsetWidth;
+  box.classList.add("hurt");
+  if (lives <= 0) { gameOver(); return true; }
+  return false;
+}
+
+// ---------- title, game over, victory ----------
+function showTitle() {
+  mode = "title";
+  var d = dialog();
+  d.appendChild(el("h2", "", "Escape the OSI Tower"));
+  d.appendChild(el("p", "", "You are trapped in a tower with seven floors. Each floor is one layer of the OSI model, from Layer 1 at the bottom to Layer 7 at the top. A boss waits on the roof."));
+  d.appendChild(el("ol", "",
+    "<li>Walk and jump to the glowing terminal on each floor and press <b>E</b>.</li>" +
+    "<li>Read the lesson on that layer, then answer three questions. Wrong answers cost a life.</li>" +
+    "<li>The stairs unlock. Reach the door to climb to the next floor.</li>" +
+    "<li>On the roof, send data down through all seven layers to defeat the boss.</li>"));
+  d.appendChild(el("p", "muted", "Falling into the gaps only sends you back to the start of the floor."));
+  var row = el("div", "btnrow", "");
+  var b = el("button", "btn", "Start climbing");
+  b.onclick = function () { score = 0; lives = 5; loadFloor(0); };
+  row.appendChild(b);
+  d.appendChild(row);
+  b.focus();
+}
+
+function gameOver() {
+  clearInterval(bossTimer);
+  var wasBoss = (floorIdx === 7);
+  mode = "gameover";
+  var d = dialog();
+  d.appendChild(el("h2", "", "Out of lives"));
+  d.appendChild(el("p", "", "The tower resets " + (wasBoss ? "the boss fight" : "this floor") + ". You get 3 lives and your score goes back to where it was when you arrived."));
+  var row = el("div", "btnrow", "");
+  var b = el("button", "btn", wasBoss ? "Retry the boss" : "Retry floor " + (floorIdx + 1));
+  b.onclick = function () {
+    lives = 3;
+    if (wasBoss) { score = bossStartScore; startBoss(); }
+    else { score = floorStartScore; loadFloor(floorIdx); }
+  };
+  row.appendChild(b);
+  d.appendChild(row);
+  b.focus();
+}
+
+function showVictory() {
+  clearInterval(bossTimer);
+  mode = "victory";
+  floorIdx = 8;
+  score += 200;
+  updateHud();
+  renderTower();
+  var d = dialog();
+  d.appendChild(el("h2", "", "You escaped the tower"));
+  d.appendChild(el("p", "", "The Packet Shredder is gone. Your data went down all seven layers and back out into the world. Final score: <b>" + score + "</b>."));
+  var list = "";
+  for (var i = 0; i < 7; i++) {
+    list += "<div><small>Layer " + (i + 1) + " " + FLOORS[i].name + "</small>" + FLOORS[i].concept.pdu + " · " + FLOORS[i].concept.protocols + "</div>";
+  }
+  d.appendChild(el("div", "facts", list));
+  d.appendChild(el("p", "muted", "Memory trick, Layer 1 to 7: <b>P</b>lease <b>D</b>o <b>N</b>ot <b>T</b>hrow <b>S</b>ausage <b>P</b>izza <b>A</b>way."));
+  var row = el("div", "btnrow", "");
+  var b = el("button", "btn", "Play again");
+  b.onclick = function () { score = 0; lives = 5; loadFloor(0); };
+  row.appendChild(b);
+  d.appendChild(row);
+  b.focus();
+}
+
+// ---------- platformer ----------
+function allPlatforms() {
+  var L = FLOORS[floorIdx].level;
+  var list = [];
+  for (var i = 0; i < L.ground.length; i++) { list.push({ x: L.ground[i][0], y: GROUND_Y, w: L.ground[i][1] - L.ground[i][0] }); }
+  for (var j = 0; j < L.plats.length; j++) { list.push({ x: L.plats[j][0], y: L.plats[j][1], w: L.plats[j][2] }); }
+  return list;
+}
+
+function respawn() {
+  player.x = 30; player.y = GROUND_Y - player.h;
+  player.vx = 0; player.vy = 0; player.onGround = true;
+}
+
+function loadFloor(i) {
+  floorIdx = i;
+  floorStartScore = score;
+  solved = false;
+  roundIdx = 0;
+  currentRounds = null;
+  respawn();
+  mode = "play";
+  closeModal();
+  updateHud();
+  renderTower();
+  var f = FLOORS[i];
+  toast("Floor " + (i + 1) + ": " + f.title + ". Find the terminal.");
+}
+
+function update(dt) {
+  var L = FLOORS[floorIdx].level;
+  var dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  player.vx = dir * 210;
+  if (dir !== 0) { player.face = dir; walkClock += dt * 10; }
+  player.vy += 1500 * dt;
+  if (player.vy > 900) { player.vy = 900; }
+
+  coyote = player.onGround ? 0.1 : coyote - dt;
+  if (jumpBuf > 0) { jumpBuf -= dt; }
+  if (jumpBuf > 0 && coyote > 0) {
+    player.vy = -610;
+    player.onGround = false;
+    coyote = 0;
+    jumpBuf = 0;
+  }
+
+  var prevBottom = player.y + player.h;
+  player.x += player.vx * dt;
+  if (player.x < 0) { player.x = 0; }
+  if (player.x > W - player.w) { player.x = W - player.w; }
+  player.y += player.vy * dt;
+  player.onGround = false;
+
+  if (player.vy >= 0) {
+    var plats = allPlatforms();
+    for (var i = 0; i < plats.length; i++) {
+      var p = plats[i];
+      var bottom = player.y + player.h;
+      if (prevBottom <= p.y + 2 && bottom >= p.y && player.x + player.w > p.x && player.x < p.x + p.w) {
+        player.y = p.y - player.h;
+        player.vy = 0;
+        player.onGround = true;
+      }
+    }
+  }
+
+  if (player.y > H + 60) {
+    respawn();
+    toast("You fell into the static. Back to the start.");
+  }
+
+  // door
+  var doorBox = { x: L.door - 18, y: GROUND_Y - 56, w: 36, h: 56 };
+  var touching = player.x < doorBox.x + doorBox.w && player.x + player.w > doorBox.x && player.y < doorBox.y + doorBox.h && player.y + player.h > doorBox.y;
+  if (touching && solved) {
+    if (floorIdx < 6) { loadFloor(floorIdx + 1); }
+    else { startBoss(); }
+  }
+}
+
+function nearTerminal() {
+  var t = FLOORS[floorIdx].level.term;
+  var cx = player.x + player.w / 2;
+  return Math.abs(cx - t.x) < 40 && Math.abs(player.y + player.h - t.y) < 20;
+}
+
+function useTerminal() {
+  if (mode !== "play") { return; }
+  if (!nearTerminal()) { toast("Walk up to the terminal first."); return; }
+  if (solved) { toast("This terminal is already fixed. Take the stairs."); return; }
+  if (currentRounds && roundIdx > 0) { showRound(); return; }
+  showLesson(0);
+}
+
+// ---------- lesson ----------
+function showLesson(p) {
+  var f = FLOORS[floorIdx];
+  var pages = LESSONS[floorIdx];
+  var last = (p === pages.length - 1);
+  mode = "puzzle";
+  if (last) { lessonSeen[floorIdx] = true; }
+  var d = dialog();
+  var band = el("div", "band", "Layer " + f.n + " · " + f.name + " · Lesson");
+  band.style.background = f.color;
+  band.style.color = f.ink;
+  d.appendChild(band);
+  d.appendChild(el("h2", "", pages[p].t));
+  if (p === 0) { d.appendChild(el("p", "muted", f.story)); }
+  var dots = "";
+  for (var i = 0; i < pages.length; i++) { dots += "<i class='" + (i <= p ? "on" : "") + "'></i>"; }
+  d.appendChild(el("div", "pages", dots));
+  d.appendChild(el("div", "lesson", pages[p].h));
+  d.appendChild(el("p", "rnd", "Page " + (p + 1) + " of " + pages.length));
+  var row = el("div", "btnrow", "");
+  if (p > 0) {
+    var back = el("button", "btn alt", "Back");
+    back.onclick = function () { showLesson(p - 1); };
+    row.appendChild(back);
+  }
+  var next = el("button", "btn", last ? "Start the questions" : "Next");
+  next.onclick = function () { if (last) { startQuestions(); } else { showLesson(p + 1); } };
+  row.appendChild(next);
+  var away = el("button", "btn alt", "Step away");
+  away.onclick = function () { closeModal(); mode = "play"; };
+  row.appendChild(away);
+  d.appendChild(row);
+  next.focus();
+}
+
+// picks 2 easy questions and 1 harder one at random from this layer's pool
+function startQuestions() {
+  var pool = POOLS[floorIdx];
+  var e = shuffled(pool.easy.length);
+  var h = shuffled(pool.hard.length);
+  currentRounds = [pool.easy[e[0]], pool.easy[e[1]], pool.hard[h[0]]];
+  roundIdx = 0;
+  showRound();
+}
+
+// ---------- drawing ----------
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawBackdrop(accent, bigText) {
+  ctx.fillStyle = colors.lane;
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = colors.line;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.7;
+  for (var y = 0; y < H; y += 30) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    var off = (Math.floor(y / 30) % 2) * 40;
+    for (var x = off; x < W; x += 80) {
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 30); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 0.13;
+  ctx.fillStyle = accent;
+  ctx.font = "800 250px 'Bricolage Grotesque', sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(bigText, W / 2, 290);
+  ctx.globalAlpha = 1;
+}
+
+function draw() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  if (floorIdx >= 7) {
+    drawBackdrop(colors.accent, "7+");
+    ctx.fillStyle = colors.ink;
+    ctx.fillRect(0, GROUND_Y, W, 40);
+    ctx.fillStyle = colors.muted;
+    ctx.font = "700 16px 'JetBrains Mono', monospace";
+    ctx.textAlign = "left";
+    ctx.fillText("THE ROOF", 16, 28);
+    return;
+  }
+  var f = FLOORS[floorIdx];
+  var L = f.level;
+  drawBackdrop(f.color, String(f.n));
+
+  ctx.fillStyle = colors.muted;
+  ctx.font = "700 15px 'JetBrains Mono', monospace";
+  ctx.textAlign = "left";
+  ctx.fillText("LAYER " + f.n + " · " + f.name.toUpperCase(), 16, 28);
+
+  // ground and platforms
+  var plats = allPlatforms();
+  for (var i = 0; i < plats.length; i++) {
+    var p = plats[i];
+    var isGround = (p.y === GROUND_Y);
+    ctx.fillStyle = f.color;
+    ctx.fillRect(p.x, p.y, p.w, isGround ? H - p.y : 14);
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fillRect(p.x, p.y, p.w, 3);
+  }
+
+  // terminal
+  var t = L.term;
+  var glow = solved ? 0 : 0.5 + 0.5 * Math.sin(performance.now() / 300);
+  if (!solved) {
+    ctx.globalAlpha = 0.25 + 0.25 * glow;
+    ctx.fillStyle = f.color;
+    rr(t.x - 26, t.y - 52, 52, 52, 10);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = colors.ink;
+  rr(t.x - 16, t.y - 42, 32, 30, 4);
+  ctx.fill();
+  ctx.fillStyle = solved ? colors.ok : f.color;
+  ctx.fillRect(t.x - 12, t.y - 38, 24, 22);
+  ctx.fillStyle = colors.ink;
+  ctx.fillRect(t.x - 4, t.y - 12, 8, 8);
+  ctx.fillRect(t.x - 12, t.y - 5, 24, 5);
+  if (solved) {
+    ctx.fillStyle = "#fff";
+    ctx.font = "700 16px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("OK", t.x, t.y - 22);
+  }
+
+  // door
+  var dx = L.door;
+  ctx.fillStyle = solved ? colors.ok : colors.muted;
+  rr(dx - 18, GROUND_Y - 56, 36, 56, 6);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.font = "700 11px 'JetBrains Mono', monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(solved ? "UP" : "LOCK", dx, GROUND_Y - 24);
+
+  // prompts
+  if (mode === "play" && nearTerminal() && !solved) { drawPrompt("Press E to use the terminal", t.x, t.y - 62); }
+  if (mode === "play" && solved && Math.abs(player.x - dx) < 140) { drawPrompt("Stairs unlocked", dx, GROUND_Y - 68); }
+  if (mode === "play" && !solved && Math.abs(player.x - dx) < 70) { drawPrompt("Locked: fix the terminal", dx, GROUND_Y - 68); }
+
+  drawPlayer();
+}
+
+function drawPrompt(text, x, y) {
+  ctx.font = "700 12px 'DM Sans', sans-serif";
+  var w = ctx.measureText(text).width + 20;
+  var px = Math.max(4, Math.min(W - w - 4, x - w / 2));
+  ctx.fillStyle = colors.ink;
+  rr(px, y - 14, w, 22, 11);
+  ctx.fill();
+  ctx.fillStyle = colors.bg;
+  ctx.textAlign = "center";
+  ctx.fillText(text, px + w / 2, y + 1);
+}
+
+function drawPlayer() {
+  var px = player.x;
+  var py = player.y;
+  var moving = Math.abs(player.vx) > 1 && player.onGround;
+  var bob = moving ? Math.sin(walkClock) * 2 : 0;
+  ctx.fillStyle = colors.ink;
+  ctx.fillRect(px + 4, py + 24, 5, 6 + (moving ? Math.max(0, bob) : 0));
+  ctx.fillRect(px + 13, py + 24, 5, 6 + (moving ? Math.max(0, -bob) : 0));
+  ctx.fillStyle = colors.accent;
+  rr(px, py, player.w, 26, 6);
+  ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.arc(px + 7 + player.face * 2, py + 10, 4, 0, 6.3); ctx.fill();
+  ctx.beginPath(); ctx.arc(px + 15 + player.face * 2, py + 10, 4, 0, 6.3); ctx.fill();
+  ctx.fillStyle = "#12263F";
+  ctx.beginPath(); ctx.arc(px + 8 + player.face * 3, py + 10, 2, 0, 6.3); ctx.fill();
+  ctx.beginPath(); ctx.arc(px + 16 + player.face * 3, py + 10, 2, 0, 6.3); ctx.fill();
+}
+
+// ---------- puzzle terminal ----------
+function showRound() {
+  var f = FLOORS[floorIdx];
+  var r = currentRounds[roundIdx];
+  mode = "puzzle";
+  roundStart = Date.now();
+  roundMistakes = 0;
+  var d = dialog();
+  var band = el("div", "band", "Floor " + f.n + " · Layer " + f.n + " " + f.name);
+  band.style.background = f.color;
+  band.style.color = f.ink;
+  d.appendChild(band);
+  d.appendChild(el("h2", "", f.title));
+  d.appendChild(el("p", "muted", f.story));
+  d.appendChild(el("p", "rnd", "Question " + (roundIdx + 1) + " of " + currentRounds.length + (roundIdx === currentRounds.length - 1 ? " · Harder" : " · Warm-up")));
+  d.appendChild(el("p", "q", r.q));
+  var body = el("div", "pbody", "");
+  var fb = el("p", "fb", "");
+  var row = el("div", "btnrow", "");
+  d.appendChild(body);
+  d.appendChild(fb);
+  d.appendChild(row);
+
+  var away = el("button", "btn alt", "Step away");
+  away.onclick = function () { closeModal(); mode = "play"; };
+
+  if (r.type === "single") { renderSingle(r, body, fb, row); }
+  if (r.type === "multi") { renderMulti(r, body, fb, row); }
+  if (r.type === "order") { renderOrder(r, body, fb, row); }
+  if (r.type === "match") { renderMatch(r, body, fb, row); }
+  row.appendChild(away);
+}
+
+function wrong(fb, msg) {
+  roundMistakes++;
+  fb.className = "fb badt";
+  fb.textContent = msg + " You lost a life.";
+  return loseLife();
+}
+
+function roundWon(r, fb, row, body) {
+  var secs = Math.floor((Date.now() - roundStart) / 1000);
+  var base = (roundIdx === currentRounds.length - 1) ? 140 : 100;
+  var pts = (roundMistakes === 0 ? base : base - 40) + Math.max(0, 40 - secs);
+  score += pts;
+  updateHud();
+  fb.className = "fb good";
+  fb.textContent = "Correct, +" + pts + " points. " + r.explain;
+  row.innerHTML = "";
+  var f = FLOORS[floorIdx];
+  var last = (roundIdx === currentRounds.length - 1);
+  var next = el("button", "btn", last ? "Finish this floor" : "Next question");
+  next.onclick = function () {
+    roundIdx++;
+    if (roundIdx < currentRounds.length) { showRound(); } else { showConcept(); }
+  };
+  row.appendChild(next);
+  next.focus();
+}
+
+function renderSingle(r, body, fb, row) {
+  var order = shuffled(r.options.length);
+  var buttons = [];
+  for (var k = 0; k < order.length; k++) {
+    (function (idx) {
+      var b = el("button", "opt", r.options[idx]);
+      b.onclick = function () {
+        if (mode !== "puzzle") { return; }
+        if (idx === r.correct) {
+          b.className = "opt ok";
+          for (var i = 0; i < buttons.length; i++) { buttons[i].disabled = true; }
+          roundWon(r, fb, row, body);
+        } else {
+          b.className = "opt bad";
+          b.disabled = true;
+          wrong(fb, "Not that one.");
+        }
+      };
+      buttons.push(b);
+      body.appendChild(b);
+    })(order[k]);
+  }
+}
+
+function renderMulti(r, body, fb, row) {
+  var picked = {};
+  var buttons = {};
+  var order = shuffled(r.options.length);
+  for (var k = 0; k < order.length; k++) {
+    (function (idx) {
+      var b = el("button", "opt", r.options[idx]);
+      b.onclick = function () {
+        if (mode !== "puzzle") { return; }
+        picked[idx] = !picked[idx];
+        b.className = "opt" + (picked[idx] ? " sel" : "");
+      };
+      buttons[idx] = b;
+      body.appendChild(b);
+    })(order[k]);
+  }
+  var check = el("button", "btn", "Check answer");
+  check.onclick = function () {
+    if (mode !== "puzzle") { return; }
+    var allRight = true;
+    var wrongOnes = [];
+    for (var i = 0; i < r.options.length; i++) {
+      var shouldBe = r.correct.indexOf(i) >= 0;
+      if (!!picked[i] !== shouldBe) { allRight = false; if (picked[i]) { wrongOnes.push(i); } }
+    }
+    if (allRight) {
+      for (var j in buttons) { buttons[j].disabled = true; if (picked[j]) { buttons[j].className = "opt ok"; } }
+      check.disabled = true;
+      roundWon(r, fb, row, body);
+    } else {
+      for (var w = 0; w < wrongOnes.length; w++) { buttons[wrongOnes[w]].className = "opt bad"; picked[wrongOnes[w]] = false; }
+      wrong(fb, "Something is wrong or missing.");
+    }
+  };
+  row.appendChild(check);
+}
+
+function renderOrder(r, body, fb, row) {
+  var next = 0;
+  var order = shuffled(r.items.length);
+  var buttons = [];
+  for (var k = 0; k < order.length; k++) {
+    (function (idx) {
+      var b = el("button", "opt", r.items[idx]);
+      b.onclick = function () {
+        if (mode !== "puzzle") { return; }
+        if (idx === next) {
+          next++;
+          b.className = "opt ok";
+          b.innerHTML = "<span class='num'>" + next + "</span>" + r.items[idx];
+          b.disabled = true;
+          fb.textContent = "";
+          if (next === r.items.length) { roundWon(r, fb, row, body); }
+        } else {
+          b.className = "opt bad";
+          setTimeout(function () { if (!b.disabled) { b.className = "opt"; } }, 500);
+          wrong(fb, "That step does not come next.");
+        }
+      };
+      buttons.push(b);
+      body.appendChild(b);
+    })(order[k]);
+  }
+}
+
+function renderMatch(r, body, fb, row) {
+  var answers = [];
+  var rows = [];
+  for (var i = 0; i < r.rows.length; i++) { answers.push(-1); }
+  var check = el("button", "btn", "Check answers");
+  check.disabled = true;
+
+  function refreshCheck() {
+    var done = true;
+    for (var a = 0; a < answers.length; a++) { if (answers[a] === -1) { done = false; } }
+    check.disabled = !done;
+  }
+
+  for (var m = 0; m < r.rows.length; m++) {
+    (function (ri) {
+      var line = el("div", "mrow", "");
+      line.appendChild(el("b", "", r.rows[ri].label));
+      var choices = el("div", "choices", "");
+      var btns = [];
+      for (var c = 0; c < r.choices.length; c++) {
+        (function (ci) {
+          var b = el("button", "opt", r.choices[ci]);
+          b.onclick = function () {
+            if (mode !== "puzzle") { return; }
+            answers[ri] = ci;
+            for (var x = 0; x < btns.length; x++) { btns[x].className = "opt" + (x === ci ? " sel" : ""); }
+            line.className = "mrow";
+            refreshCheck();
+          };
+          btns.push(b);
+          choices.appendChild(b);
+        })(c);
+      }
+      line.appendChild(choices);
+      rows.push({ line: line, btns: btns });
+      body.appendChild(line);
+    })(m);
+  }
+
+  check.onclick = function () {
+    if (mode !== "puzzle") { return; }
+    var bad = 0;
+    for (var i2 = 0; i2 < r.rows.length; i2++) {
+      if (answers[i2] === r.rows[i2].a) {
+        rows[i2].line.className = "mrow ok";
+        for (var x = 0; x < rows[i2].btns.length; x++) { rows[i2].btns[x].disabled = true; }
+      } else {
+        bad++;
+        rows[i2].line.className = "mrow bad";
+        for (var y = 0; y < rows[i2].btns.length; y++) { rows[i2].btns[y].className = "opt"; }
+        answers[i2] = -1;
+      }
+    }
+    if (bad === 0) {
+      check.disabled = true;
+      roundWon(r, fb, row, body);
+    } else {
+      refreshCheck();
+      wrong(fb, bad + " of " + r.rows.length + " are wrong. The red rows need another look.");
+    }
+  };
+  row.appendChild(check);
+}
+
+function showConcept() {
+  var f = FLOORS[floorIdx];
+  score += 50;
+  lives = Math.min(5, lives + 1);
+  solved = true;
+  updateHud();
+  var d = dialog();
+  var band = el("div", "band", "Floor " + f.n + " cleared");
+  band.style.background = f.color;
+  band.style.color = f.ink;
+  d.appendChild(band);
+  d.appendChild(el("h2", "", "Layer " + f.n + ": " + f.name));
+  d.appendChild(el("p", "", f.concept.text));
+  d.appendChild(el("div", "facts",
+    "<div><small>Data unit (PDU)</small>" + f.concept.pdu + "</div>" +
+    "<div><small>Devices</small>" + f.concept.devices + "</div>" +
+    "<div><small>Protocols</small>" + f.concept.protocols + "</div>"));
+  d.appendChild(el("p", "muted", "+50 for clearing the floor and +1 life (up to 5). The stairs are unlocked."));
+  var row = el("div", "btnrow", "");
+  var b = el("button", "btn", "Go find the stairs");
+  b.onclick = function () { closeModal(); mode = "play"; toast("Stairs unlocked. Head for the door on the right."); };
+  row.appendChild(b);
+  d.appendChild(row);
+  b.focus();
+}
+
+// ---------- boss battle ----------
+var BOSS_SVG = "<svg viewBox='0 0 100 100' aria-hidden='true'><path d='M12 78 L18 30 L36 44 L50 20 L64 44 L82 30 L88 78 Z' fill='#D12F2F'/>" +
+  "<circle cx='36' cy='56' r='9' fill='#fff'/><circle cx='64' cy='56' r='9' fill='#fff'/><circle cx='38' cy='58' r='4' fill='#12263F'/><circle cx='62' cy='58' r='4' fill='#12263F'/>" +
+  "<path d='M28 72 L36 66 L44 72 L52 66 L60 72 L68 66 L72 72' stroke='#fff' stroke-width='3' fill='none'/></svg>";
+
+function startBoss() {
+  floorIdx = 7;
+  bossStartScore = score;
+  bossStep = 0;
+  mode = "boss";
+  updateHud();
+  renderTower();
+  var d = dialog();
+  d.appendChild(el("div", "bosshead", BOSS_SVG + "<div><div class='name'>The Packet Shredder</div><p class='muted'>It eats data that is not wrapped correctly.</p></div>"));
+  d.appendChild(el("p", "", "You reach the roof. Send your data down through all seven layers, from Layer 7 to Layer 1. At each layer pick the right job or header before the timer runs out."));
+  d.appendChild(el("p", "muted", "A wrong answer or a timeout costs a life. Seven correct answers defeat the boss."));
+  var row = el("div", "btnrow", "");
+  var b = el("button", "btn", "Fight");
+  b.onclick = function () { bossBusy = false; renderBoss(""); };
+  row.appendChild(b);
+  d.appendChild(row);
+  b.focus();
+}
+
+function chip(layerNo, text) {
+  var f = FLOORS[layerNo - 1];
+  return "<span class='chip' style='background:" + f.color + ";color:" + f.ink + "'>" + text + "</span>";
+}
+
+function pduHtml(done) {
+  if (done === 0) { return "<div class='pdu empty'>Your data is waiting at the top of the stack.</div><div class='pdulabel'>Data unit: none yet</div>"; }
+  var label = (done <= 3) ? "Data" : (done === 4 ? "Segment" : (done === 5 ? "Packet" : (done === 6 ? "Frame" : "Bits")));
+  if (done >= 7) {
+    return "<div class='pdu'>" + chip(1, "0101 1100 0110 1001 1010 0011 0111 1000") + "</div><div class='pdulabel'>Data unit: " + label + "</div>";
+  }
+  var dataText = "HTTP request";
+  if (done >= 2) { dataText += " (encrypted)"; }
+  if (done >= 3) { dataText += " + session"; }
+  var s = "";
+  if (done >= 6) { s += chip(2, "Eth header · MACs"); }
+  if (done >= 5) { s += chip(3, "IP header · IPs"); }
+  if (done >= 4) { s += chip(4, "TCP header · ports"); }
+  s += chip(7, dataText);
+  if (done >= 6) { s += chip(2, "FCS"); }
+  return "<div class='pdu'>" + s + "</div><div class='pdulabel'>Data unit: " + label + "</div>";
+}
+
+function renderBoss(msg) {
+  clearInterval(bossTimer);
+  var step = BOSS_STEPS[bossStep];
+  var f = FLOORS[step.layer - 1];
+  var d = dialog("bossbox");
+  bossTime = 15;
+  var hp = "";
+  for (var i = 0; i < 7; i++) { hp += "<i class='" + (i < bossStep ? "gone" : "") + "'></i>"; }
+  d.appendChild(el("div", "bosshead", BOSS_SVG + "<div style='flex:1;min-width:0'><div class='name'>The Packet Shredder</div><div class='hp'>" + hp + "</div></div>"));
+  var band = el("div", "band", "Layer " + step.layer + " · " + f.name);
+  band.style.background = f.color;
+  band.style.color = f.ink;
+  d.appendChild(band);
+  d.appendChild(el("p", "q", step.q));
+  d.appendChild(el("div", "", pduHtml(bossStep)));
+  var timer = el("div", "timer", "<i></i>");
+  d.appendChild(timer);
+  var body = el("div", "pbody", "");
+  d.appendChild(body);
+  var fb = el("p", "fb" + (msg ? " good" : ""), msg);
+  d.appendChild(fb);
+
+  var order = shuffled(step.options.length);
+  var buttons = [];
+  for (var k = 0; k < order.length; k++) {
+    (function (idx) {
+      var b = el("button", "opt", step.options[idx]);
+      b.onclick = function () {
+        if (mode !== "boss" || bossBusy) { return; }
+        if (idx === 0) { bossHit(b, buttons, d); }
+        else {
+          b.className = "opt bad";
+          b.disabled = true;
+          bossAttack(d, fb, "The Shredder bites. That was not the right one.");
+        }
+      };
+      buttons.push(b);
+      body.appendChild(b);
+    })(order[k]);
+  }
+
+  bossTimer = setInterval(function () {
+    if (mode !== "boss") { clearInterval(bossTimer); return; }
+    if (teamOpen) { return; }
+    bossTime -= 0.1;
+    var bar = timer.firstChild;
+    bar.style.width = Math.max(0, (bossTime / 15) * 100) + "%";
+    timer.className = "timer" + (bossTime < 5 ? " low" : "");
+    if (bossTime <= 0) {
+      bossTime = 15;
+      bossAttack(d, fb, "Too slow. The Shredder lunges.");
+    }
+  }, 100);
+}
+
+function bossAttack(d, fb, msg) {
+  fb.className = "fb badt";
+  fb.textContent = msg + " You lost a life.";
+  d.classList.remove("shake");
+  void d.offsetWidth;
+  d.classList.add("shake");
+  loseLife();
+}
+
+function bossHit(b, buttons, d) {
+  bossBusy = true;
+  clearInterval(bossTimer);
+  b.className = "opt ok";
+  for (var i = 0; i < buttons.length; i++) { buttons[i].disabled = true; }
+  score += 60 + Math.floor(bossTime * 2);
+  bossStep++;
+  updateHud();
+  setTimeout(function () {
+    if (mode !== "boss") { return; }
+    bossBusy = false;
+    if (bossStep >= 7) {
+      var dd = dialog();
+      dd.appendChild(el("div", "bosshead", BOSS_SVG + "<div><div class='name'>The Packet Shredder</div></div>"));
+      dd.appendChild(el("div", "", pduHtml(7)));
+      dd.appendChild(el("p", "", "Layer 1 sends the bits out as signals and the Shredder has nothing left to eat. Fully wrapped data is hard to stop."));
+      var row = el("div", "btnrow", "");
+      var nb = el("button", "btn", "Escape the tower");
+      nb.onclick = showVictory;
+      row.appendChild(nb);
+      dd.appendChild(row);
+      nb.focus();
+      mode = "victory";
+    } else {
+      renderBoss("Direct hit. Next layer down.");
+    }
+  }, 700);
+}
+
+
+// ---------- team popup ----------
+var PLACEHOLDER = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20400%20400'%3E%3Crect%20width='400'%20height='400'%20fill='%23D3DEEA'/%3E%3Ccircle%20cx='200'%20cy='155'%20r='70'%20fill='%238FA3BC'/%3E%3Cpath%20d='M60%20400c0-95%2063-150%20140-150s140%2055%20140%20150z'%20fill='%238FA3BC'/%3E%3C/svg%3E";
+var TEAM = [
+  { name: "Ayush Agrawal", roll: "10" },
+  { name: "Savya Agrawal", roll: "18" },
+  { name: "Kaustubh Sontakke", roll: "21" }
+];
+
+function openTeam() {
+  keys.left = false;
+  keys.right = false;
+  teamOpen = true;
+  var d = document.getElementById("teamDialog");
+  d.innerHTML = "";
+  d.appendChild(el("h2", "", "Meet The Team"));
+  var ul = el("ul", "members", "");
+  ul.style.paddingLeft = "0";
+  for (var i = 0; i < TEAM.length; i++) {
+    var li = el("li", "member", "");
+    var img = document.createElement("img");
+    img.className = "photo";
+    img.src = PLACEHOLDER;
+    img.alt = TEAM[i].name;
+    img.width = 88;
+    img.height = 88;
+    li.appendChild(img);
+    li.appendChild(el("div", "", "<b>" + TEAM[i].name + "</b><small>Roll No: " + TEAM[i].roll + "</small>"));
+    ul.appendChild(li);
+  }
+  d.appendChild(ul);
+  var row = el("div", "btnrow", "");
+  var close = el("button", "btn", "Close");
+  close.onclick = closeTeam;
+  row.appendChild(close);
+  d.appendChild(row);
+  document.getElementById("teamModal").hidden = false;
+  close.focus();
+}
+
+function closeTeam() {
+  teamOpen = false;
+  document.getElementById("teamModal").hidden = true;
+  if (document.activeElement && document.activeElement.blur) { document.activeElement.blur(); }
+}
+
+document.getElementById("teamBtn").addEventListener("click", openTeam);
+document.getElementById("teamModal").addEventListener("click", function (e) { if (e.target === this) { closeTeam(); } });
+document.addEventListener("keydown", function (e) { if (teamOpen && e.code === "Escape") { closeTeam(); } });
+
+// ---------- input ----------
+function setKey(code, down) {
+  if (code === "ArrowLeft" || code === "KeyA") { keys.left = down; return true; }
+  if (code === "ArrowRight" || code === "KeyD") { keys.right = down; return true; }
+  return false;
+}
+
+document.addEventListener("keydown", function (e) {
+  if (mode !== "play" || teamOpen) { return; }
+  if (e.repeat && (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW")) { e.preventDefault(); return; }
+  if (setKey(e.code, true)) { e.preventDefault(); return; }
+  if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") { e.preventDefault(); jumpBuf = 0.12; return; }
+  if (e.code === "KeyE" || e.code === "Enter") { e.preventDefault(); useTerminal(); }
+});
+document.addEventListener("keyup", function (e) { setKey(e.code, false); });
+window.addEventListener("blur", function () { keys.left = false; keys.right = false; });
+
+function hold(id, onDown, onUp) {
+  var b = document.getElementById(id);
+  b.addEventListener("pointerdown", function (e) { e.preventDefault(); onDown(); });
+  b.addEventListener("pointerup", function () { if (onUp) { onUp(); } });
+  b.addEventListener("pointerleave", function () { if (onUp) { onUp(); } });
+  b.addEventListener("pointercancel", function () { if (onUp) { onUp(); } });
+}
+hold("tLeft", function () { keys.left = true; }, function () { keys.left = false; });
+hold("tRight", function () { keys.right = true; }, function () { keys.right = false; });
+hold("tJump", function () { if (mode === "play") { jumpBuf = 0.12; } });
+hold("tUse", function () { useTerminal(); });
+
+// ---------- main loop ----------
+var lastTime = 0;
+function loop(ts) {
+  var dt = (ts - lastTime) / 1000;
+  lastTime = ts;
+  if (dt > 0.05) { dt = 0.05; }
+  if (mode === "play" && !teamOpen) { update(dt); }
+  draw();
+  requestAnimationFrame(loop);
+}
+
+updateHud();
+renderTower();
+showTitle();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
